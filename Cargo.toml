@@ -1,17 +1,18 @@
 [package]
-authors     = ["Patrick Auernig <dev.patrick.auernig@gmail.com>"]
-name        = "discord-rpc-client"
-description = "A Rust client for Discord RPC."
+authors     = ["Matthew Pomes <matthew.pomes@pm.me>"]
+name        = "discord-ipc"
+description = "A Rust client for Discord IPC."
 keywords    = ["discord", "rpc", "ipc"]
 license     = "MIT"
 readme      = "README.md"
-repository  = "https://gitlab.com/valeth/discord-rpc-client.rs.git"
-version     = "0.3.0"
+version     = "0.0.0"
 
-[badges]
-travis-ci   = { repository = "valeth/discord-rpc-client.rs" }
-appveyor    = { repository = "valeth/discord-rpc-client.rs", service = "gitlab" }
-maintenance = { status = "experimental" }
+[features]
+default = []
+all = ["rich_presence", "voice", "messages"]
+rich_presence = []
+voice = []
+messages = []
 
 [dependencies]
 serde        = "^1.0"
@@ -32,7 +33,3 @@ features = ["v4"]
 
 [dev-dependencies]
 simplelog = "~0.5"
-
-[features]
-default = ["rich_presence"]
-rich_presence = []
