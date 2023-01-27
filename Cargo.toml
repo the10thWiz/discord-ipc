@@ -1,4 +1,5 @@
 [package]
+edition = "2021"
 authors     = ["Matthew Pomes <matthew.pomes@pm.me>"]
 name        = "discord-ipc"
 description = "A Rust client for Discord IPC."
@@ -9,27 +10,19 @@ version     = "0.0.0"
 
 [features]
 default = []
-all = ["rich_presence", "voice", "messages"]
-rich_presence = []
-voice = []
-messages = []
 
 [dependencies]
-serde        = "^1.0"
-serde_derive = "^1.0"
+serde        = { version = "*", features = ["derive"] }
+serde_repr   = "*"
 serde_json   = "^1.0"
-byteorder    = "^1.0"
+chrono       = { version = "0.4.23", features = ["serde"] }
+thiserror    = "1.0.38"
+bitfield     = "0.14.0"
+async-trait  = "*"
+tokio        = { version = "1.24.2", features = ["net", "io-util"] }
+
 log          = "~0.4"
-bytes        = "^0.4"
-parking_lot  = "^0.7"
-crossbeam-channel = "^0.3"
-
-[target.'cfg(windows)'.dependencies]
-named_pipe   = "0.3.0"
-
-[dependencies.uuid]
-version  = "^0.6.2"
-features = ["v4"]
 
 [dev-dependencies]
 simplelog = "~0.5"
+tokio        = { version = "1.24.2", features = ["net", "io-util", "rt", "macros", "time"] }
