@@ -140,7 +140,7 @@ pub enum Command {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Authorize {
-    code: String,
+    pub code: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

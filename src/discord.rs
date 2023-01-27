@@ -18,7 +18,7 @@ impl Default for UnixTimestamp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Snowflake(pub(crate) u64);
 
 impl Snowflake {
