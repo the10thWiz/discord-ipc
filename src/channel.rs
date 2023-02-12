@@ -30,7 +30,13 @@ pub struct PartialUser {
     pub username: String,
     pub discriminator: String,
     pub id: Snowflake,
-    pub avatar: String,
+    pub avatar: Option<String>,
+}
+
+impl PartialUser {
+    pub fn nums(&self) -> usize {
+        self.discriminator.parse().unwrap()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

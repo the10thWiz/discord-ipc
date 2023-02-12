@@ -206,41 +206,43 @@ pub struct GetVoiceSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetVoiceSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
-    input: Option<InputSettings>,
+    pub input: Option<InputSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    output: Option<OutputSettings>,
+    pub output: Option<OutputSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mode: Option<ModeSettings>,
+    pub mode: Option<ModeSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    automatic_gain_control: Option<bool>,
+    pub automatic_gain_control: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    echo_cancellation: Option<bool>,
+    pub echo_cancellation: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    noise_suppression: Option<bool>,
+    pub noise_suppression: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    qos: Option<bool>,
+    pub qos: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    silence_warning: Option<bool>,
+    pub silence_warning: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    deaf: Option<bool>,
+    pub deaf: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mute: Option<bool>,
+    pub mute: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetChannel {
-    id: Snowflake,
-    guild_id: Snowflake,
-    name: String,
-    r#type: ChannelType,
+    pub id: Snowflake,
+    pub guild_id: Snowflake,
+    pub name: String,
+    pub r#type: ChannelType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    topic: Option<String>,
+    pub topic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    bitrate: Option<u64>,
-    user_limit: u64,
-    position: u64,
-    voice_states: Vec<VoiceState>,
-    messages: Vec<Message>,
+    pub bitrate: Option<u64>,
+    pub user_limit: u64,
+    pub position: u64,
+    #[serde(default)]
+    pub voice_states: Vec<VoiceState>,
+    #[serde(default)]
+    pub messages: Vec<Message>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -358,8 +360,8 @@ pub struct ChannelCreate {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VoiceChannelSelect {
-    pub channel_id: Snowflake,
-    pub guild_id: Snowflake,
+    pub channel_id: Option<Snowflake>,
+    pub guild_id: Option<Snowflake>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoiceSettingsUpdate {
@@ -376,34 +378,30 @@ pub struct VoiceSettingsUpdate {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VoiceConnectionStatus {
-    state: VoiceState,
-    hostname: String,
-    pings: Vec<u64>,
-    average_ping: u64,
-    last_ping: u64,
+    pub state: VoiceState,
+    pub hostname: String,
+    pub pings: Vec<u64>,
+    pub average_ping: u64,
+    pub last_ping: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SpeakingStart {
-    user_id: Snowflake,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SpeakingStop {
-    user_id: Snowflake,
+pub struct SpeakingUpdate {
+    pub user_id: Snowflake,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageNotification {
-    channel_id: Snowflake,
-    message: Message,
+    pub channel_id: Snowflake,
+    pub message: Message,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NotificationCreate {
-    channel_id: Snowflake,
-    message: Message,
-    icon_url: String,
-    title: String,
-    body: String,
+    pub channel_id: Snowflake,
+    pub message: Message,
+    pub icon_url: String,
+    pub title: String,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -413,7 +411,7 @@ pub struct Secret {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ActivityJoinRequest {
-    user: PartialUser,
+    pub user: PartialUser,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -429,8 +427,8 @@ pub enum EventResponse {
     VoiceStateDelete(VoiceState),
     VoiceSettingsUpdate(VoiceSettingsUpdate),
     VoiceConnectionStatus(VoiceConnectionStatus),
-    SpeakingStart(SpeakingStart),
-    SpeakingStop(SpeakingStop),
+    SpeakingStart(SpeakingUpdate),
+    SpeakingStop(SpeakingUpdate),
     MessageCreate(MessageNotification),
     MessageUpdate(MessageNotification),
     MessageDelete(MessageNotification),

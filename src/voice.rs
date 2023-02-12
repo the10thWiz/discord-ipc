@@ -2,7 +2,7 @@ use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use crate::{channel::GuildMember, discord::Snowflake};
+use crate::{channel::{GuildMember, PartialUser}, discord::Snowflake};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -89,17 +89,32 @@ pub enum KeyType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VoiceState {
-    guild_id: Option<Snowflake>,
-    channel_id: Option<Snowflake>,
-    user_id: Snowflake,
-    member: Option<GuildMember>,
-    session_id: Snowflake,
-    deaf: bool,
-    mute: bool,
-    self_deaf: bool,
-    self_mute: bool,
-    self_stream: Option<bool>,
-    self_video: bool,
-    suppress: bool,
-    request_to_speak_timestamp: Option<DateTime<Local>>,
+    pub guild_id: Option<Snowflake>,
+    pub channel_id: Option<Snowflake>,
+    pub user_id: Option<Snowflake>,
+    pub member: Option<GuildMember>,
+    pub user: Option<PartialUser>,
+    pub session_id: Option<Snowflake>,
+    #[serde(default)]
+    pub deaf: bool,
+    #[serde(default)]
+    pub mute: bool,
+    #[serde(default)]
+    pub self_deaf: bool,
+    #[serde(default)]
+    pub self_mute: bool,
+    #[serde(default)]
+    pub self_stream: Option<bool>,
+    #[serde(default)]
+    pub self_video: bool,
+    #[serde(default)]
+    pub suppress: bool,
+    #[serde(default)]
+    pub request_to_speak_timestamp: Option<DateTime<Local>>,
+}
+
+impl VoiceState {
+    pub fn user_id(&self) -> Snowflake {
+        self.user_id.or_else(|| self.user.as_ref().map(|u| u.id)).unwrap_or_else(|| self.member.as_ref().unwrap().user.as_ref().unwrap().id)
+    }
 }

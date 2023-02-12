@@ -1,6 +1,6 @@
 pub mod activity;
 pub mod channel;
-mod command;
+pub mod command;
 pub mod discord;
 mod oauth;
 mod payload;
@@ -12,33 +12,39 @@ pub use oauth::OauthScope;
 
 use std::{
     collections::VecDeque,
+    future::Future,
     io,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
 use activity::Activity;
 use channel::PartialUser;
 use command::{
-    Authenticate, Authorize, Command, CommandWrapper, EventResponse, RPCServerConf, Subscribe,
+    Authenticate, Authorize, Command, CommandWrapper, EventResponse, GetChannel, RPCServerConf,
+    Subscribe,
 };
 use discord::Snowflake;
 use log::*;
-use oauth::{GrantType, TokenReq, TokenRes};
+use oauth::{GrantType, TokenRefreshServer, TokenReq, TokenReqServer, TokenRes};
 use payload::OutPayload;
 use platform::PlatformSocket;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 
 use crate::oauth::TokenRefresh;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Underlying io error")]
+    #[error("Underlying io error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Underlying json error")]
+    #[error("Underlying json error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("Underlying http error")]
+    #[error("Underlying http error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("Invalid Event: {0}")]
     InvalidEvent(String),
@@ -65,11 +71,16 @@ pub trait Connection: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin> Connection for T {}
 
 struct Secret {
-    secret: String,
+    secret: SecretType,
     refresh_token: String,
     expires: Instant,
-    save_refresh: Box<dyn Fn(&str) -> io::Result<()>>,
+    save_refresh: Box<dyn TokenSaver>,
     scopes: Vec<OauthScope>,
+}
+
+pub enum SecretType {
+    Local(String),
+    Remote(String),
 }
 
 pub struct Client<C> {
@@ -183,11 +194,26 @@ impl<C: Connection> Client<C> {
         self.response().await
     }
 
+    pub async fn get_selected_channel(&mut self) -> Result<Option<GetChannel>> {
+        self.send_command(Command::GetSelectedVoiceChannel {})
+            .await?;
+        self.response().await
+    }
+
     pub async fn subscribe(&mut self, event: EventSubscribe) -> Result<()> {
         self.refresh_auth().await?;
         #[derive(Deserialize)]
         struct SubRes {}
         self.send_message(OpCode::FRAME, Subscribe::sub(event))
+            .await?;
+        self.response::<SubRes>().await.map(|_| ())
+    }
+
+    pub async fn unsubscribe(&mut self, event: EventSubscribe) -> Result<()> {
+        self.refresh_auth().await?;
+        #[derive(Deserialize)]
+        struct SubRes {}
+        self.send_message(OpCode::FRAME, Subscribe::unsub(event))
             .await?;
         self.response::<SubRes>().await.map(|_| ())
     }
@@ -209,19 +235,33 @@ impl<C: Connection> Client<C> {
             .await?;
             let token: Authorize = self.response().await?;
             let http = reqwest::Client::new();
-            let res: TokenRes = http
-                .post(format!("https:{}/oauth2/token", self.config.api_endpoint))
-                .form(&TokenReq {
-                    grant_type: GrantType::AuthorizationCode,
-                    code: &token.code,
-                    client_id: Snowflake(self.client_id),
-                    client_secret: &auth.secret,
-                })
-                .send()
-                .await?
-                .json()
-                .await?;
-            let _ = (auth.save_refresh)(&res.refresh_token);
+            let res: TokenRes = match &auth.secret {
+                SecretType::Local(secret) => {
+                    http.post(format!("https:{}/oauth2/token", self.config.api_endpoint))
+                        .form(&TokenReq {
+                            grant_type: GrantType::AuthorizationCode,
+                            code: &token.code,
+                            client_id: Snowflake(self.client_id),
+                            client_secret: secret,
+                        })
+                        .send()
+                        .await?
+                        .json()
+                        .await?
+                }
+                SecretType::Remote(server) => {
+                    http.post(format!("https:{}/refresh", server))
+                        .form(&TokenReqServer {
+                            code: &token.code,
+                            client_id: Snowflake(self.client_id),
+                        })
+                        .send()
+                        .await?
+                        .json()
+                        .await?
+                }
+            };
+            let _ = auth.save_refresh.save(&res.refresh_token).await;
             auth.refresh_token = res.refresh_token;
             auth.expires = Instant::now() + Duration::from_secs(res.expires_in - 10);
             self.send_message(
@@ -241,18 +281,33 @@ impl<C: Connection> Client<C> {
         if let Some(auth) = self.auth.as_mut() {
             if auth.expires < Instant::now() {
                 let http = reqwest::Client::new();
-                let res: TokenRes = http
-                    .post(format!("https:{}/oauth2/token", self.config.api_endpoint))
-                    .form(&TokenRefresh {
-                        grant_type: GrantType::RefreshToken,
-                        refresh_token: &auth.refresh_token,
-                        client_id: Snowflake(self.client_id),
-                        client_secret: &auth.secret,
-                    })
-                    .send()
-                    .await?
-                    .json()
-                    .await?;
+                let res: TokenRes = match &auth.secret {
+                    SecretType::Local(secret) => {
+                        http.post(format!("https:{}/oauth2/token", self.config.api_endpoint))
+                            .form(&TokenRefresh {
+                                grant_type: GrantType::RefreshToken,
+                                refresh_token: &auth.refresh_token,
+                                client_id: Snowflake(self.client_id),
+                                client_secret: secret,
+                            })
+                            .send()
+                            .await?
+                            .json()
+                            .await?
+                    }
+                    SecretType::Remote(server) => {
+                        http.post(format!("https:{}/token", server))
+                            .form(&TokenRefreshServer {
+                                refresh_token: &auth.refresh_token,
+                                client_id: Snowflake(self.client_id),
+                            })
+                            .send()
+                            .await?
+                            .json()
+                            .await?
+                    }
+                };
+                let _ = auth.save_refresh.save(&res.refresh_token).await;
                 auth.refresh_token = res.refresh_token;
                 auth.expires = Instant::now() + Duration::from_secs(res.expires_in - 10);
                 self.send_message(
@@ -277,12 +332,40 @@ impl<C: Connection> Client<C> {
     }
 }
 
+#[async_trait::async_trait]
+pub trait TokenSaver {
+    async fn save(&self, token: &str) -> io::Result<()>;
+}
+
+pub struct FileSaver {
+    pub path: PathBuf,
+}
+
+#[async_trait::async_trait]
+impl TokenSaver for FileSaver {
+    async fn save(&self, token: &str) -> io::Result<()> {
+        File::create(&self.path)
+            .await?
+            .write_all(token.as_bytes())
+            .await
+    }
+}
+
+struct NoneSaver;
+
+#[async_trait::async_trait]
+impl TokenSaver for NoneSaver {
+    async fn save(&self, _: &str) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct ClientBuilder {
     client_id: u64,
     scopes: Vec<OauthScope>,
-    secret: Option<String>,
+    secret: Option<SecretType>,
     refresh_token: Option<String>,
-    save_refresh: Box<dyn Fn(&str) -> io::Result<()>>,
+    save_refresh: Box<dyn TokenSaver>,
 }
 
 impl ClientBuilder {
@@ -292,15 +375,25 @@ impl ClientBuilder {
             secret: None,
             scopes: vec![OauthScope::Rpc],
             refresh_token: None,
-            save_refresh: Box::new(|_| Ok(())),
+            save_refresh: Box::new(NoneSaver),
         }
     }
 
+    /// Insert a local secret. The value passed should be the Secret provided by Discord
     pub fn secret(mut self, secret: impl Into<String>) -> Self {
-        self.secret = Some(secret.into());
+        self.secret = Some(SecretType::Local(secret.into()));
         self
     }
 
+    /// Insert a remote secret. The value passed is used as a domain name to make the token request
+    /// to. The server is expected to make a request to Discord on your app's behalf, with a client
+    /// secret stored on the server.
+    pub fn remote_secret(mut self, server: impl Into<String>) -> Self {
+        self.secret = Some(SecretType::Remote(server.into()));
+        self
+    }
+
+    /// Insert an OauthScope
     pub fn scope(mut self, scope: OauthScope) -> Self {
         self.scopes.push(scope);
         self
@@ -312,8 +405,8 @@ impl ClientBuilder {
         self
     }
 
-    /// Set refresh token if there is one already
-    pub fn save_token(mut self, token: impl Fn(&str) -> io::Result<()> + 'static) -> Self {
+    /// Insert TokenSaver
+    pub fn save_token(mut self, token: impl TokenSaver + 'static) -> Self {
         self.save_refresh = Box::new(token);
         self
     }
@@ -337,7 +430,7 @@ impl ClientBuilder {
                 username: String::new(),
                 discriminator: String::new(),
                 id: Snowflake(0),
-                avatar: String::new(),
+                avatar: None,
             },
             auth: None,
             config: RPCServerConf {

@@ -134,7 +134,7 @@ mod tests {
 }";
         println!("{}", s);
 
-        let event = parse_response::<()>(s).unwrap();
+        let event = parse_response::<()>(s.as_bytes()).unwrap();
         assert_eq!(
             event,
             OutPayload::Event(Event::VoiceSettingsUpdate(VoiceSettingsUpdate {

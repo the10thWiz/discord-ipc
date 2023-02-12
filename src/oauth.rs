@@ -96,6 +96,18 @@ pub enum GrantType {
     RefreshToken,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct TokenRefreshServer<'a> {
+    pub(crate) refresh_token: &'a str,
+    pub(crate) client_id: Snowflake,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct TokenReqServer<'a> {
+    pub(crate) code: &'a str,
+    pub(crate) client_id: Snowflake,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TokenRes {
     pub(crate) access_token: String,

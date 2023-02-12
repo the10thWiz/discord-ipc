@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{
     de::{Error, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
@@ -24,6 +26,12 @@ pub struct Snowflake(pub(crate) u64);
 impl Snowflake {
     pub fn timestamp(&self) -> UnixTimestamp {
         UnixTimestamp((self.0 >> 22) + 1420070400000)
+    }
+}
+
+impl Display for Snowflake {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

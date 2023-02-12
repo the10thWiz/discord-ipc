@@ -2,10 +2,10 @@ extern crate discord_ipc;
 use std::{
     fs::File,
     io::{self, Read, Write},
-    time::Duration,
+    time::Duration, path::PathBuf,
 };
 
-use discord_ipc::{Client, Event, EventSubscribe, OauthScope, Result};
+use discord_ipc::{Client, Event, EventSubscribe, OauthScope, Result, FileSaver, command::VoiceChannelSelect};
 use simplelog::{Config, TermLogger};
 
 const CLIENT_ID: u64 = 0;
@@ -34,22 +34,24 @@ async fn main() -> Result<()> {
         .secret(CLIENT_SECRET)
         .scope(OauthScope::RpcVoiceRead)
         .refresh_token(read_token().ok())
-        .save_token(write_token)
+        .save_token(FileSaver {
+            path: PathBuf::from("refresh_token"),
+        })
         .connect()
         .await?;
     client.set_activity("Activity Name").await?;
     client.subscribe(EventSubscribe::VoiceChannelSelect).await?;
     loop {
         match client.event().await? {
-            Event::VoiceChannelSelect(s) => {
+            Event::VoiceChannelSelect(VoiceChannelSelect { channel_id: Some(channel_id), .. }) => {
                 client
                     .subscribe(EventSubscribe::SpeakingStart {
-                        channel_id: s.channel_id,
+                        channel_id,
                     })
                     .await?;
                 client
                     .subscribe(EventSubscribe::SpeakingStop {
-                        channel_id: s.channel_id,
+                        channel_id
                     })
                     .await?;
             }
