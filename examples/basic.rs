@@ -2,14 +2,18 @@ extern crate discord_ipc;
 use std::{
     fs::File,
     io::{self, Read, Write},
-    time::Duration, path::PathBuf,
+    path::PathBuf,
 };
 
-use discord_ipc::{Client, Event, EventSubscribe, OauthScope, Result, FileSaver, command::VoiceChannelSelect};
+use discord_ipc::{
+    command::VoiceChannelSelect, Client, Event, EventSubscribe, FileSaver, OauthScope, Result,
+};
 use simplelog::{Config, TermLogger};
 
-const CLIENT_ID: u64 = 0;
-const CLIENT_SECRET: &str = "";
+// const CLIENT_ID: u64 = 0;
+// const CLIENT_SECRET: &str = "";
+const CLIENT_ID: u64 = 1067583828543148164;
+const CLIENT_SECRET: &str = "t_G0ECIQevD-V5Xqs4jHx_GFm7FNhcGJ";
 
 fn read_token() -> io::Result<String> {
     let mut file = File::open("refresh_token")?;
@@ -20,11 +24,6 @@ fn read_token() -> io::Result<String> {
     } else {
         Err(io::Error::new(io::ErrorKind::Other, "No token found"))
     }
-}
-
-fn write_token(s: &str) -> io::Result<()> {
-    let mut file = File::create("refresh_token")?;
-    file.write_all(s.as_bytes())
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -43,16 +42,15 @@ async fn main() -> Result<()> {
     client.subscribe(EventSubscribe::VoiceChannelSelect).await?;
     loop {
         match client.event().await? {
-            Event::VoiceChannelSelect(VoiceChannelSelect { channel_id: Some(channel_id), .. }) => {
+            Event::VoiceChannelSelect(VoiceChannelSelect {
+                channel_id: Some(channel_id),
+                ..
+            }) => {
                 client
-                    .subscribe(EventSubscribe::SpeakingStart {
-                        channel_id,
-                    })
+                    .subscribe(EventSubscribe::SpeakingStart { channel_id })
                     .await?;
                 client
-                    .subscribe(EventSubscribe::SpeakingStop {
-                        channel_id
-                    })
+                    .subscribe(EventSubscribe::SpeakingStop { channel_id })
                     .await?;
             }
             _ => (),

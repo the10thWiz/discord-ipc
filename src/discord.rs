@@ -1,10 +1,14 @@
+//! General Discord constructs
+
 use std::fmt::Display;
 
+use chrono::NaiveDateTime;
 use serde::{
     de::{Error, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
+/// Time stamp in Seconds since 1/1/1970
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct UnixTimestamp(u64);
@@ -20,10 +24,21 @@ impl Default for UnixTimestamp {
     }
 }
 
+impl UnixTimestamp {
+    /// Convert to chrono::DateTime
+    pub fn as_chrono(&self) -> NaiveDateTime {
+        NaiveDateTime::from_timestamp_opt(self.0 as i64, 0).unwrap()
+    }
+}
+
+/// Discord Numeric Identifier
+///
+/// (Due to JS limitations, Discord transmits 64 bit integers as strings)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Snowflake(pub(crate) u64);
 
 impl Snowflake {
+    /// Get creation datetime as UnixTimestamp
     pub fn timestamp(&self) -> UnixTimestamp {
         UnixTimestamp((self.0 >> 22) + 1420070400000)
     }

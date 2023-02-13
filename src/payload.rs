@@ -1,10 +1,6 @@
-use serde::{de::Visitor, Deserialize, Deserializer};
-use serde_json::Value;
+use serde::Deserialize;
 
-use crate::{
-    command::{Command, EventResponse as Event},
-    Error, Result,
-};
+use crate::{command::EventResponse as Event, Error, Result};
 
 #[derive(Debug, PartialEq)]
 pub enum OutPayload<C> {
@@ -14,7 +10,8 @@ pub enum OutPayload<C> {
 
 #[derive(Debug, Deserialize)]
 struct Params<'a> {
-    cmd: &'a str,
+    // TODO: this is never used
+    _cmd: &'a str,
     evt: Option<&'a str>,
 }
 

@@ -1,3 +1,5 @@
+//! Commands sent to the Discord client
+
 use chrono::prelude::*;
 use serde::{de::Visitor, Deserialize, Serialize};
 
@@ -298,26 +300,72 @@ impl<'de> Visitor<'de> for Empty {
     }
 }
 
+/// Parameters to subscribe to an event
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE", tag = "evt", content = "args")]
 pub enum EventSubscribe {
-    GuildStatus { guild_id: Snowflake },
+    /// Guild Status updates
+    GuildStatus {
+        /// Guild to watch
+        guild_id: Snowflake,
+    },
+    /// Guild creation
     GuildCreate,
+    /// Channel creation
     ChannelCreate,
+    /// Current user joins or leaves a voice channel
     VoiceChannelSelect,
-    VoiceStateCreate { channel_id: Snowflake },
-    VoiceStateUpdate { channel_id: Snowflake },
-    VoiceStateDelete { channel_id: Snowflake },
+    /// User joins voice channel
+    VoiceStateCreate {
+        /// Channel to watch
+        channel_id: Snowflake,
+    },
+    /// User updates state in the  current voice channel
+    VoiceStateUpdate {
+        /// Channel to watch
+        channel_id: Snowflake,
+    },
+    /// User leaves current voice channel
+    VoiceStateDelete {
+        /// Channel to watch
+        channel_id: Snowflake,
+    },
+    /// Current user voice settings change
     VoiceSettingsUpdate,
+    /// Connection state. Unknown
     VoiceConnectionStatus,
-    SpeakingStart { channel_id: Snowflake },
-    SpeakingStop { channel_id: Snowflake },
-    MessageCreate { channel_id: Snowflake },
-    MessageUpdate { channel_id: Snowflake },
-    MessageDelete { channel_id: Snowflake },
+    /// User starts speaking
+    SpeakingStart {
+        /// Channel to watch
+        channel_id: Snowflake,
+    },
+    /// User stops speaking
+    SpeakingStop {
+        /// Channel to watch
+        channel_id: Snowflake,
+    },
+    /// Message sent
+    MessageCreate {
+        /// Channel to watch
+        channel_id: Snowflake,
+    },
+    /// Message updated, both edit & reaction
+    MessageUpdate {
+        /// Channel to watch
+        channel_id: Snowflake,
+    },
+    /// Message deleted
+    MessageDelete {
+        /// Channel to watch
+        channel_id: Snowflake,
+    },
+    /// Unknown
     NotificationCreate,
+    /// Can join another user
     ActivityJoin,
+    /// Can spectate another user
     ActivitySpectate,
+    /// Other users must ask to join the current user
     ActivityJoinRequest,
 }
 
@@ -414,26 +462,47 @@ pub struct ActivityJoinRequest {
     pub user: PartialUser,
 }
 
+/// Event information
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventResponse {
+    /// Ready event sent once upon joining. TODO: remove
     Ready(Ready),
+    /// Error event sent in response to a command. TODO: remove
     Error(Error),
+    /// Guild Status Event
     GuildStatus(GuildStatus),
+    /// Guild Create Event
     GuildCreate(GuildCreate),
+    /// Channel created
     ChannelCreate(ChannelCreate),
+    /// User changes voice channel
     VoiceChannelSelect(VoiceChannelSelect),
+    /// User joins current voice channel
     VoiceStateCreate(VoiceState),
+    /// User updates settings in current voice channel
     VoiceStateUpdate(VoiceState),
+    /// User leaves current voice channel
     VoiceStateDelete(VoiceState),
+    /// Current user updates voice settings
     VoiceSettingsUpdate(VoiceSettingsUpdate),
+    /// Unknown
     VoiceConnectionStatus(VoiceConnectionStatus),
+    /// User starts speaking
     SpeakingStart(SpeakingUpdate),
+    /// User stops speaking
     SpeakingStop(SpeakingUpdate),
+    /// Message sent
     MessageCreate(MessageNotification),
+    /// Message updated, edit or reaction
     MessageUpdate(MessageNotification),
+    /// Message deleted
     MessageDelete(MessageNotification),
+    /// Unknown
     NotificationCreate(NotificationCreate),
+    /// Current user asks to join game using the provided secret
     ActivityJoin(Secret),
+    /// Current user asks to spectate game using the provided secret
     ActivitySpectate(Secret),
+    /// User asks to join game
     ActivityJoinRequest(ActivityJoinRequest),
 }
