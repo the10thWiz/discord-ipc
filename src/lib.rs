@@ -3,23 +3,20 @@
 
 pub mod activity;
 pub mod channel;
-mod command;
+pub mod command;
 pub mod discord;
 mod ipc;
-mod oauth;
+pub mod oauth;
 mod payload;
 mod platform;
 pub mod voice;
 
 pub use command::{EventResponse as Event, EventSubscribe};
 use ipc::Framed;
-pub use oauth::OauthScope;
+use oauth::{NoneSaver, SecretType};
+pub use oauth::{OauthScope, TokenSaver};
 
-use std::{
-    io::{self, ErrorKind},
-    path::PathBuf,
-    time::Instant,
-};
+use std::io;
 
 use activity::Activity;
 use channel::PartialUser;
@@ -29,10 +26,6 @@ use log::*;
 use platform::PlatformSocket;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::{
-    fs::File,
-    io::{AsyncReadExt, AsyncWriteExt},
-};
 
 use crate::ipc::OpCode;
 
@@ -83,19 +76,6 @@ pub trait ConnectionBuilder {
 pub trait Connection: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
 
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin> Connection for T {}
-
-struct Secret {
-    secret: SecretType,
-    refresh_token: String,
-    expires: Instant,
-    save_refresh: Box<dyn TokenSaver>,
-    scopes: Vec<OauthScope>,
-}
-
-enum SecretType {
-    Local(String),
-    Remote(String),
-}
 
 /// Client construct
 pub struct Client<C> {
@@ -163,57 +143,6 @@ impl<C: Connection> Client<C> {
     /// User information provided during connection
     pub fn user(&self) -> &PartialUser {
         &self.user
-    }
-}
-
-/// Struct to save refresh tokens locally between executions
-#[async_trait::async_trait]
-pub trait TokenSaver {
-    /// Save token to external location
-    async fn save(&self, token: &str) -> io::Result<()>;
-    /// Load token from external location
-    async fn load(&self) -> io::Result<Option<String>>;
-}
-
-/// TokenSaver that uses a local file to save the token
-pub struct FileSaver {
-    /// Path to save the token to
-    pub path: PathBuf,
-}
-
-#[async_trait::async_trait]
-impl TokenSaver for FileSaver {
-    async fn save(&self, token: &str) -> io::Result<()> {
-        File::create(&self.path)
-            .await?
-            .write_all(token.as_bytes())
-            .await
-    }
-
-    async fn load(&self) -> io::Result<Option<String>> {
-        match File::open(&self.path).await {
-            Ok(mut f) => {
-                let mut s = String::new();
-                f.read_to_string(&mut s).await?;
-                Ok(Some(s))
-            }
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-}
-
-/// TokenSaver that doesn't save
-struct NoneSaver;
-
-#[async_trait::async_trait]
-impl TokenSaver for NoneSaver {
-    async fn save(&self, _: &str) -> io::Result<()> {
-        Ok(())
-    }
-
-    async fn load(&self) -> io::Result<Option<String>> {
-        Ok(None)
     }
 }
 

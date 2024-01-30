@@ -9,11 +9,15 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::{
     channel::PartialUser,
-    command::{Authenticate, Authorize, Command, CommandWrapper, EventResponse, RPCServerConf},
+    command::{
+        Authenticate, Authorize, Command, CommandWrapper, Empty, EventResponse, RPCServerConf,
+    },
     discord::Snowflake,
-    oauth::{GrantType, TokenRefresh, TokenRefreshServer, TokenReq, TokenReqServer, TokenRes},
+    oauth::{
+        GrantType, Secret, TokenRefresh, TokenRefreshServer, TokenReq, TokenReqServer, TokenRes,
+    },
     payload::{self, OutPayload},
-    ClientBuilder, Connection, Error, Result, Secret, SecretType,
+    ClientBuilder, Connection, Error, Result, SecretType,
 };
 
 pub struct Framed<C> {
@@ -23,7 +27,7 @@ pub struct Framed<C> {
     event_queue: VecDeque<EventResponse>,
 
     auth: Option<Secret>,
-    pub config: RPCServerConf,
+    pub(crate) config: RPCServerConf,
 }
 
 #[repr(u32)]
@@ -36,7 +40,10 @@ pub enum OpCode {
 }
 
 impl<C: Connection> Framed<C> {
-    pub async fn connect(config: ClientBuilder, connection: C) -> Result<(Self, PartialUser)> {
+    pub(crate) async fn connect(
+        config: ClientBuilder,
+        connection: C,
+    ) -> Result<(Self, PartialUser)> {
         let mut client = Self {
             client_id: config.client_id,
             connection,
@@ -59,18 +66,20 @@ impl<C: Connection> Framed<C> {
                 },
             )
             .await?;
-        if let EventResponse::Ready(a) = client.event().await? {
+        if let OutPayload::Ready(a) = client.recv::<Empty>().await? {
             client.config = a.config;
             if let Some(secret_val) = config.secret {
                 let refresh_token = config.save_refresh.load().await.ok().and_then(|f| f);
                 let has_refresh = refresh_token.is_some();
-                client.auth = Some(Secret {
-                    refresh_token: refresh_token.unwrap_or_default(),
-                    expires: Instant::now() - Duration::from_secs(1),
-                    secret: secret_val,
-                    save_refresh: config.save_refresh,
-                    scopes: config.scopes,
-                });
+                client.auth = Some(
+                    Secret::new(
+                        secret_val,
+                        Instant::now() - Duration::from_secs(1),
+                        config.save_refresh,
+                        config.scopes,
+                    )
+                    .await?,
+                );
                 if has_refresh {
                     if client.refresh_auth().await.is_err() {
                         client.authenticate().await?;
@@ -86,7 +95,7 @@ impl<C: Connection> Framed<C> {
         }
     }
 
-    pub async fn send_message<M: Serialize>(
+    pub(crate) async fn send_message<M: Serialize>(
         &mut self,
         opcode: OpCode,
         message: M,
@@ -111,14 +120,14 @@ impl<C: Connection> Framed<C> {
         Ok(self)
     }
 
-    pub async fn send_command(&mut self, command: Command) -> Result<&mut Self> {
+    pub(crate) async fn send_command(&mut self, command: Command) -> Result<&mut Self> {
         self.refresh_auth().await?;
         self.send_message(OpCode::FRAME, CommandWrapper::new(command))
             .await?;
         Ok(self)
     }
 
-    pub async fn recv<M: DeserializeOwned>(&mut self) -> Result<OutPayload<M>> {
+    pub(crate) async fn recv<M: DeserializeOwned>(&mut self) -> Result<OutPayload<M>> {
         let mut buf = [0u8; 4];
         self.connection.read_exact(&mut buf).await?;
         let ty = u32::from_le_bytes(buf);
@@ -143,30 +152,32 @@ impl<C: Connection> Framed<C> {
         }
     }
 
-    pub async fn response<M: DeserializeOwned>(&mut self) -> Result<M> {
+    pub(crate) async fn response<M: DeserializeOwned>(&mut self) -> Result<M> {
         loop {
             match self.recv().await? {
-                OutPayload::Event(EventResponse::Error(e)) => return Err(Error::Discord(e)),
+                OutPayload::Error(e) => return Err(Error::Discord(e)),
+                OutPayload::Ready(_) => return Err(Error::UnexpectedEvent),
                 OutPayload::Event(e) => self.event_queue.push_back(e),
                 OutPayload::CommandResponse(m) => return Ok(m),
             }
         }
     }
 
-    pub async fn event(&mut self) -> Result<EventResponse> {
+    pub(crate) async fn event(&mut self) -> Result<EventResponse> {
         self.refresh_auth().await?;
         if let Some(e) = self.event_queue.pop_front() {
             Ok(e)
         } else {
             match self.recv::<()>().await? {
-                OutPayload::Event(EventResponse::Error(e)) => return Err(Error::Discord(e)),
+                OutPayload::Error(e) => return Err(Error::Discord(e)),
+                OutPayload::Ready(_) => return Err(Error::UnexpectedEvent),
                 OutPayload::Event(e) => Ok(e),
                 OutPayload::CommandResponse(_m) => Err(Error::UnexpectedResponse),
             }
         }
     }
 
-    pub async fn authenticate(&mut self) -> Result<()> {
+    pub(crate) async fn authenticate(&mut self) -> Result<()> {
         if let Some(mut auth) = self.auth.take() {
             self.send_message(
                 OpCode::FRAME,
@@ -178,41 +189,12 @@ impl<C: Connection> Framed<C> {
             )
             .await?;
             let token: Authorize = self.response().await?;
-            let http = reqwest::Client::new();
-            let res: TokenRes = match &auth.secret {
-                SecretType::Local(secret) => {
-                    http.post(format!("https:{}/oauth2/token", self.config.api_endpoint))
-                        .form(&TokenReq {
-                            grant_type: GrantType::AuthorizationCode,
-                            code: &token.code,
-                            client_id: Snowflake(self.client_id),
-                            client_secret: secret,
-                        })
-                        .send()
-                        .await?
-                        .json()
-                        .await?
-                }
-                SecretType::Remote(server) => {
-                    http.post(format!("https:{}/refresh", server))
-                        .form(&TokenReqServer {
-                            code: &token.code,
-                            client_id: Snowflake(self.client_id),
-                        })
-                        .send()
-                        .await?
-                        .json()
-                        .await?
-                }
-            };
-            let _ = auth.save_refresh.save(&res.refresh_token).await;
-            auth.refresh_token = res.refresh_token;
-            auth.expires = Instant::now() + Duration::from_secs(res.expires_in - 10);
+            let access_token = auth
+                .authorization_token(self.client_id, &self.config, &token.code)
+                .await?;
             self.send_message(
                 OpCode::FRAME,
-                CommandWrapper::new(Command::Authenticate {
-                    access_token: res.access_token,
-                }),
+                CommandWrapper::new(Command::Authenticate { access_token }),
             )
             .await?;
             let _: Authenticate = self.response().await?;
@@ -221,51 +203,22 @@ impl<C: Connection> Framed<C> {
         Ok(())
     }
 
-    pub async fn refresh_auth(&mut self) -> Result<()> {
+    pub(crate) async fn refresh_auth(&mut self) -> Result<()> {
         if let Some(auth) = self.auth.as_mut() {
-            if auth.expires < Instant::now() {
-                let http = reqwest::Client::new();
-                let res: TokenRes = match &auth.secret {
-                    SecretType::Local(secret) => {
-                        http.post(format!("https:{}/oauth2/token", self.config.api_endpoint))
-                            .form(&TokenRefresh {
-                                grant_type: GrantType::RefreshToken,
-                                refresh_token: &auth.refresh_token,
-                                client_id: Snowflake(self.client_id),
-                                client_secret: secret,
-                            })
-                            .send()
-                            .await?
-                            .json()
-                            .await?
-                    }
-                    SecretType::Remote(server) => {
-                        http.post(format!("https:{}/refresh", server))
-                            .form(&TokenRefreshServer {
-                                refresh_token: &auth.refresh_token,
-                                client_id: Snowflake(self.client_id),
-                            })
-                            .send()
-                            .await?
-                            .json()
-                            .await?
-                    }
-                };
-                let _ = auth.save_refresh.save(&res.refresh_token).await;
-                auth.refresh_token = res.refresh_token;
-                auth.expires = Instant::now() + Duration::from_secs(res.expires_in - 10);
+            if let Some(access_token) = auth
+                .refresh_token(self.client_id, &self.config)
+                .await?
+                .map(|s| s.to_string())
+            {
                 self.send_message(
                     OpCode::FRAME,
-                    CommandWrapper::new(Command::Authenticate {
-                        access_token: res.access_token,
-                    }),
+                    CommandWrapper::new(Command::Authenticate { access_token }),
                 )
                 .await?;
                 loop {
                     match self.recv::<Authenticate>().await? {
-                        OutPayload::Event(EventResponse::Error(e)) => {
-                            return Err(Error::Discord(e))
-                        }
+                        OutPayload::Error(e) => return Err(Error::Discord(e)),
+                        OutPayload::Ready(_) => return Err(Error::UnexpectedEvent),
                         OutPayload::Event(e) => self.event_queue.push_back(e),
                         OutPayload::CommandResponse(_) => break,
                     }
@@ -281,61 +234,3 @@ struct HandshakeRequest {
     v: usize,
     client_id: Snowflake,
 }
-
-// impl ClientBuilder {
-//     pub async fn connect(self) -> Result<Client<<PlatformSocket as ConnectionBuilder>::Socket>> {
-//         let connection = PlatformSocket::connect().await?;
-//         let mut client = Client {
-//             client_id: self.client_id,
-//             connection,
-//             buffer: vec![],
-//             event_queue: Default::default(),
-//             user: PartialUser {
-//                 username: String::new(),
-//                 discriminator: String::new(),
-//                 id: Snowflake(0),
-//                 avatar: None,
-//             },
-//             auth: None,
-//             config: RPCServerConf {
-//                 cdn_host: String::new(),
-//                 api_endpoint: String::new(),
-//                 environment: String::new(),
-//             },
-//         };
-//         client
-//             .send_message(
-//                 OpCode::HANDSHAKE,
-//                 HandshakeRequest {
-//                     v: 1,
-//                     client_id: Snowflake(self.client_id),
-//                 },
-//             )
-//             .await?;
-//         if let EventResponse::Ready(a) = client.event().await? {
-//             client.user = a.user;
-//             client.config = a.config;
-//             if let Some(secret_val) = self.secret {
-//                 let has_refresh = self.refresh_token.is_some();
-//                 client.auth = Some(Secret {
-//                     refresh_token: self.refresh_token.unwrap_or_default(),
-//                     expires: Instant::now() - Duration::from_secs(1),
-//                     secret: secret_val,
-//                     save_refresh: self.save_refresh,
-//                     scopes: self.scopes,
-//                 });
-//                 if has_refresh {
-//                     if client.refresh_auth().await.is_err() {
-//                         client.authenticate().await?;
-//                     }
-//                 } else {
-//                     client.authenticate().await?;
-//                 }
-//             }
-//
-//             Ok(client)
-//         } else {
-//             Err(Error::UnexpectedEvent)
-//         }
-//     }
-// }

@@ -57,7 +57,7 @@ impl CommandWrapper {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE", tag = "cmd", content = "args")]
-pub enum Command {
+pub(crate) enum Command {
     Authorize {
         scopes: Vec<OauthScope>,
         client_id: Snowflake,
@@ -141,46 +141,60 @@ pub enum Command {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Authorize {
+pub(crate) struct Authorize {
     pub code: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Authenticate {
+pub(crate) struct Authenticate {
     user: PartialUser,
     scopes: Vec<OauthScope>,
     expires: DateTime<Local>,
     application: Application,
 }
 
+/// Guild listing
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetGuilds {
+    /// List of partial guilds
     guilds: Vec<PartialGuild>,
 }
 
+/// Guild details
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetGuild {
+    /// Guild ID
     id: Snowflake,
+    /// Guild Name
     name: String,
+    /// Guild icon URL
     icon_url: String,
 }
 
+/// Channel Listing
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetChannels {
+    /// List of partial channels
     channels: Vec<PartialChannel>,
 }
 
+/// User Voice Settings
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetUserVoiceSettings {
+    /// User ID
     user_id: Snowflake,
+    /// Left/Right balance
     #[serde(skip_serializing_if = "Option::is_none")]
     pan: Option<Pan>,
+    /// User Volume
     #[serde(skip_serializing_if = "Option::is_none")]
     volume: Option<Volume>,
+    /// User Mute
     #[serde(skip_serializing_if = "Option::is_none")]
     mute: Option<bool>,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetVoiceSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -205,52 +219,77 @@ pub struct GetVoiceSettings {
     mute: Option<bool>,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetVoiceSettings {
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<InputSettings>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<OutputSettings>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<ModeSettings>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automatic_gain_control: Option<bool>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub echo_cancellation: Option<bool>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub noise_suppression: Option<bool>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qos: Option<bool>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub silence_warning: Option<bool>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deaf: Option<bool>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mute: Option<bool>,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetChannel {
+    /// Unknown
     pub id: Snowflake,
+    /// Unknown
     pub guild_id: Snowflake,
+    /// Unknown
     pub name: String,
+    /// Unknown
     pub r#type: ChannelType,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Unknown
     pub topic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Unknown
     pub bitrate: Option<u64>,
+    /// Unknown
     pub user_limit: u64,
+    /// Unknown
     pub position: u64,
+    /// Unknown
     #[serde(default)]
     pub voice_states: Vec<VoiceState>,
+    /// Unknown
     #[serde(default)]
     pub messages: Vec<Message>,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CommandPayload {
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     cmd: Option<Command>,
+    /// Unknown
     #[serde(skip_serializing_if = "Option::is_none")]
     event: Option<EventSubscribe>,
 }
@@ -261,6 +300,7 @@ pub struct CommandPayload {
 //     Event(EventResponse),
 // }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Empty {}
 
@@ -369,94 +409,148 @@ pub enum EventSubscribe {
     ActivityJoinRequest,
 }
 
+/// RPC Server configuration sent by Discord client
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct RPCServerConf {
+pub(crate) struct RPCServerConf {
+    /// CDN prefix, e.g. `cdn.dicord.com`
     pub cdn_host: String,
+    /// API prefix, e.g. `discord.com/api`
     pub api_endpoint: String,
+    /// Unknown
     pub environment: String,
 }
 
+/// Initial Ready message
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Ready {
+pub(crate) struct Ready {
     pub v: usize,
     pub config: RPCServerConf,
     pub user: PartialUser,
 }
 
+/// Error response
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Error {
+    /// Discord Error Code
     pub code: u64,
+    /// Discord Error Message
     pub message: String,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GuildStatus {
+    /// Unknown
     pub guild: PartialGuild,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GuildCreate {
+    /// Unknown
     pub id: Snowflake,
+    /// Unknown
     pub name: String,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChannelCreate {
+    /// Unknown
     pub id: Snowflake,
+    /// Unknown
     pub name: String,
+    /// Unknown
     pub r#type: ChannelType,
 }
+
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VoiceChannelSelect {
+    /// Unknown
     pub channel_id: Option<Snowflake>,
+    /// Unknown
     pub guild_id: Option<Snowflake>,
 }
+
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoiceSettingsUpdate {
+    /// Unknown
     pub input: Option<InputSettings>,
+    /// Unknown
     pub output: Option<OutputSettings>,
+    /// Unknown
     pub mode: Option<ModeSettings>,
+    /// Unknown
     pub automatic_gain_control: Option<bool>,
+    /// Unknown
     pub echo_cancellation: Option<bool>,
+    /// Unknown
     pub noise_suppression: Option<bool>,
+    /// Unknown
     pub qos: Option<bool>,
+    /// Unknown
     pub silence_warning: Option<bool>,
+    /// Unknown
     pub deaf: Option<bool>,
+    /// Unknown
     pub mute: Option<bool>,
 }
+
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VoiceConnectionStatus {
+    /// Unknown
     pub state: VoiceState,
+    /// Unknown
     pub hostname: String,
+    /// Unknown
     pub pings: Vec<u64>,
+    /// Unknown
     pub average_ping: u64,
+    /// Unknown
     pub last_ping: u64,
 }
+
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SpeakingUpdate {
+    /// Unknown
     pub user_id: Snowflake,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageNotification {
+    /// Unknown
     pub channel_id: Snowflake,
+    /// Unknown
     pub message: Message,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NotificationCreate {
+    /// Unknown
     pub channel_id: Snowflake,
+    /// Unknown
     pub message: Message,
+    /// Unknown
     pub icon_url: String,
+    /// Unknown
     pub title: String,
+    /// Unknown
     pub body: String,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Secret {
     secret: String,
 }
 
+/// Unknown
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ActivityJoinRequest {
     pub user: PartialUser,
@@ -465,10 +559,10 @@ pub struct ActivityJoinRequest {
 /// Event information
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventResponse {
-    /// Ready event sent once upon joining. TODO: remove
-    Ready(Ready),
-    /// Error event sent in response to a command. TODO: remove
-    Error(Error),
+    // /// Ready event sent once upon joining. TODO: remove
+    // Ready(Ready),
+    // /// Error event sent in response to a command. TODO: remove
+    // Error(Error),
     /// Guild Status Event
     GuildStatus(GuildStatus),
     /// Guild Create Event

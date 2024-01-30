@@ -1,17 +1,20 @@
 use serde::Deserialize;
 
-use crate::{command::EventResponse as Event, Error, Result};
+use crate::{
+    command::{self, EventResponse as Event},
+    Error, Result,
+};
 
 #[derive(Debug, PartialEq)]
-pub enum OutPayload<C> {
+pub(crate) enum OutPayload<C> {
     Event(Event),
+    Error(command::Error),
+    Ready(command::Ready),
     CommandResponse(C),
 }
 
 #[derive(Debug, Deserialize)]
 struct Params<'a> {
-    // TODO: this is never used
-    _cmd: &'a str,
     evt: Option<&'a str>,
 }
 
@@ -20,50 +23,68 @@ struct Data<D> {
     data: D,
 }
 
-pub fn parse_response<'a, C: Deserialize<'a>>(s: &'a [u8]) -> Result<OutPayload<C>> {
-    let Params { evt, .. } = serde_json::from_slice(s)?;
+pub(crate) fn parse_response<'a, C: Deserialize<'a>>(s: &'a [u8]) -> Result<OutPayload<C>> {
+    let Params { evt } = serde_json::from_slice(s)?;
     if let Some(evt) = evt {
-        Ok(OutPayload::Event(match evt {
-            "READY" => Event::Ready(serde_json::from_slice::<Data<_>>(s)?.data),
-            "ERROR" => Event::Error(serde_json::from_slice::<Data<_>>(s)?.data),
-            "GUILD_STATUS" => Event::GuildStatus(serde_json::from_slice::<Data<_>>(s)?.data),
-            "GUILD_CREATE" => Event::GuildCreate(serde_json::from_slice::<Data<_>>(s)?.data),
-            "CHANNEL_CREATE" => Event::ChannelCreate(serde_json::from_slice::<Data<_>>(s)?.data),
-            "VOICE_CHANNEL_SELECT" => {
-                Event::VoiceChannelSelect(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            "VOICE_STATE_CREATE" => {
-                Event::VoiceStateCreate(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            "VOICE_STATE_UPDATE" => {
-                Event::VoiceStateUpdate(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            "VOICE_STATE_DELETE" => {
-                Event::VoiceStateDelete(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            "VOICE_SETTINGS_UPDATE" => {
-                Event::VoiceSettingsUpdate(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            "VOICE_CONNECTION_STATUS" => {
-                Event::VoiceConnectionStatus(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            "SPEAKING_START" => Event::SpeakingStart(serde_json::from_slice::<Data<_>>(s)?.data),
-            "SPEAKING_STOP" => Event::SpeakingStop(serde_json::from_slice::<Data<_>>(s)?.data),
-            "MESSAGE_CREATE" => Event::MessageCreate(serde_json::from_slice::<Data<_>>(s)?.data),
-            "MESSAGE_UPDATE" => Event::MessageUpdate(serde_json::from_slice::<Data<_>>(s)?.data),
-            "MESSAGE_DELETE" => Event::MessageDelete(serde_json::from_slice::<Data<_>>(s)?.data),
-            "NOTIFICATION_CREATE" => {
-                Event::NotificationCreate(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            "ACTIVITY_JOIN" => Event::ActivityJoin(serde_json::from_slice::<Data<_>>(s)?.data),
-            "ACTIVITY_SPECTATE" => {
-                Event::ActivitySpectate(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            "ACTIVITY_JOIN_REQUEST" => {
-                Event::ActivityJoinRequest(serde_json::from_slice::<Data<_>>(s)?.data)
-            }
-            _ => return Err(Error::InvalidEvent(evt.to_string())),
-        }))
+        if evt == "ERROR" {
+            Ok(OutPayload::Error(
+                serde_json::from_slice::<Data<_>>(s)?.data,
+            ))
+        } else if evt == "READY" {
+            Ok(OutPayload::Ready(
+                serde_json::from_slice::<Data<_>>(s)?.data,
+            ))
+        } else {
+            Ok(OutPayload::Event(match evt {
+                "GUILD_STATUS" => Event::GuildStatus(serde_json::from_slice::<Data<_>>(s)?.data),
+                "GUILD_CREATE" => Event::GuildCreate(serde_json::from_slice::<Data<_>>(s)?.data),
+                "CHANNEL_CREATE" => {
+                    Event::ChannelCreate(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "VOICE_CHANNEL_SELECT" => {
+                    Event::VoiceChannelSelect(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "VOICE_STATE_CREATE" => {
+                    Event::VoiceStateCreate(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "VOICE_STATE_UPDATE" => {
+                    Event::VoiceStateUpdate(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "VOICE_STATE_DELETE" => {
+                    Event::VoiceStateDelete(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "VOICE_SETTINGS_UPDATE" => {
+                    Event::VoiceSettingsUpdate(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "VOICE_CONNECTION_STATUS" => {
+                    Event::VoiceConnectionStatus(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "SPEAKING_START" => {
+                    Event::SpeakingStart(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "SPEAKING_STOP" => Event::SpeakingStop(serde_json::from_slice::<Data<_>>(s)?.data),
+                "MESSAGE_CREATE" => {
+                    Event::MessageCreate(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "MESSAGE_UPDATE" => {
+                    Event::MessageUpdate(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "MESSAGE_DELETE" => {
+                    Event::MessageDelete(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "NOTIFICATION_CREATE" => {
+                    Event::NotificationCreate(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "ACTIVITY_JOIN" => Event::ActivityJoin(serde_json::from_slice::<Data<_>>(s)?.data),
+                "ACTIVITY_SPECTATE" => {
+                    Event::ActivitySpectate(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                "ACTIVITY_JOIN_REQUEST" => {
+                    Event::ActivityJoinRequest(serde_json::from_slice::<Data<_>>(s)?.data)
+                }
+                _ => return Err(Error::InvalidEvent(evt.to_string())),
+            }))
+        }
     } else {
         Ok(OutPayload::CommandResponse(
             serde_json::from_slice::<Data<C>>(s)?.data,
@@ -76,7 +97,7 @@ mod tests {
 
     use crate::{
         command::VoiceSettingsUpdate,
-        voice::{Device, InputSettings, Key, KeyType, ModeSettings, OutputSettings},
+        voice::{Device, InputSettings, Key, KeyType, ModeSettings, OutputSettings, VoiceMode},
     };
 
     use super::*;
@@ -164,7 +185,7 @@ mod tests {
                     ]
                 }),
                 mode: Some(ModeSettings {
-                    r#type: "VOICE_ACTIVITY".into(),
+                    r#type: VoiceMode::VoiceActivity,
                     threshold: -46.92622950819673,
                     auto_threshold: Some(true),
                     shortcut: vec![Key {
@@ -183,17 +204,5 @@ mod tests {
                 mute: None
             }))
         )
-    }
-
-    #[allow(unused)]
-    fn gen_fibb() {
-        let mut a = 1;
-        let mut b = 1;
-        for _ in 0..100 {
-            let c = a + b;
-            println!("{c}");
-            a = b;
-            b = c;
-        }
     }
 }

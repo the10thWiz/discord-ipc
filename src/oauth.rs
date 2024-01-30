@@ -1,6 +1,16 @@
-use serde::{Deserialize, Serialize};
+use std::{
+    io::{self, ErrorKind},
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
-use crate::discord::Snowflake;
+use serde::{Deserialize, Serialize};
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncWriteExt},
+};
+
+use crate::{command::RPCServerConf, discord::Snowflake, Result};
 
 /// Oauth Scope
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -143,4 +153,220 @@ pub struct TokenRes {
     pub(crate) expires_in: u64,
     pub(crate) refresh_token: String,
     pub(crate) scope: String,
+}
+
+pub(crate) struct Secret {
+    secret: SecretType,
+    refresh_token: String,
+    expires: Instant,
+    save_refresh: Box<dyn TokenSaver>,
+    pub scopes: Vec<OauthScope>,
+}
+
+impl Secret {
+    pub async fn new(
+        secret: SecretType,
+        expires: Instant,
+        save_refresh: Box<dyn TokenSaver>,
+        scopes: Vec<OauthScope>,
+    ) -> io::Result<Self> {
+        Ok(Self {
+            secret,
+            expires,
+            refresh_token: save_refresh.load().await?.unwrap_or_default(),
+            save_refresh,
+            scopes,
+        })
+    }
+
+    /// Convert a code into an access token via either a local secret or a remote server
+    pub async fn authorization_token(
+        &mut self,
+        client_id: u64,
+        config: &RPCServerConf,
+        token: &str,
+    ) -> Result<String> {
+        let http = reqwest::Client::new();
+        let res: TokenRes = match &self.secret {
+            SecretType::Local(secret) => {
+                http.post(format!("https:{}/oauth2/token", config.api_endpoint))
+                    .form(&TokenReq {
+                        grant_type: GrantType::AuthorizationCode,
+                        code: token,
+                        client_id: Snowflake(client_id),
+                        client_secret: secret.as_str(),
+                    })
+                    .send()
+                    .await?
+                    .json()
+                    .await?
+            }
+            SecretType::Remote(server) => {
+                http.post(format!("https:{}/refresh", server))
+                    .form(&TokenReqServer {
+                        code: token,
+                        client_id: Snowflake(client_id),
+                    })
+                    .send()
+                    .await?
+                    .json()
+                    .await?
+            }
+        };
+        let _ = self.save_refresh.save(&res.refresh_token).await;
+        self.refresh_token = res.refresh_token;
+        self.expires = Instant::now() + Duration::from_secs(res.expires_in - 10);
+        Ok(res.access_token)
+    }
+
+    pub async fn refresh_token<'s>(
+        &'s mut self,
+        client_id: u64,
+        config: &RPCServerConf,
+    ) -> Result<Option<&'s str>> {
+        if self.expires < Instant::now() {
+            let http = reqwest::Client::new();
+            let res: TokenRes = match &self.secret {
+                SecretType::Local(secret) => {
+                    http.post(format!("https:{}/oauth2/token", config.api_endpoint))
+                        .form(&TokenRefresh {
+                            grant_type: GrantType::RefreshToken,
+                            refresh_token: &self.refresh_token,
+                            client_id: Snowflake(client_id),
+                            client_secret: secret.as_str(),
+                        })
+                        .send()
+                        .await?
+                        .json()
+                        .await?
+                }
+                SecretType::Remote(server) => {
+                    http.post(format!("https:{}/refresh", server))
+                        .form(&TokenRefreshServer {
+                            refresh_token: &self.refresh_token,
+                            client_id: Snowflake(client_id),
+                        })
+                        .send()
+                        .await?
+                        .json()
+                        .await?
+                }
+            };
+            let _ = self.save_refresh.save(&res.refresh_token).await;
+            self.refresh_token = res.refresh_token;
+            self.expires = Instant::now() + Duration::from_secs(res.expires_in - 10);
+            Ok(Some(&self.refresh_token))
+        } else {
+            Ok(None)
+        }
+    }
+
+    // pub(crate) async fn refresh_auth(&mut self) -> Result<()> {
+    //     if let Some(auth) = self.auth.as_mut() {
+    //         if auth.expires < Instant::now() {
+    //             let http = reqwest::Client::new();
+    //             let res: TokenRes = match &auth.secret {
+    //                 SecretType::Local(secret) => {
+    //                     http.post(format!("https:{}/oauth2/token", self.config.api_endpoint))
+    //                         .form(&TokenRefresh {
+    //                             grant_type: GrantType::RefreshToken,
+    //                             refresh_token: &auth.refresh_token,
+    //                             client_id: Snowflake(self.client_id),
+    //                             client_secret: secret.as_str(),
+    //                         })
+    //                         .send()
+    //                         .await?
+    //                         .json()
+    //                         .await?
+    //                 }
+    //                 SecretType::Remote(server) => {
+    //                     http.post(format!("https:{}/refresh", server))
+    //                         .form(&TokenRefreshServer {
+    //                             refresh_token: &auth.refresh_token,
+    //                             client_id: Snowflake(self.client_id),
+    //                         })
+    //                         .send()
+    //                         .await?
+    //                         .json()
+    //                         .await?
+    //                 }
+    //             };
+    //             let _ = auth.save_refresh.save(&res.refresh_token).await;
+    //             auth.refresh_token = res.refresh_token;
+    //             auth.expires = Instant::now() + Duration::from_secs(res.expires_in - 10);
+    //             self.send_message(
+    //                 OpCode::FRAME,
+    //                 CommandWrapper::new(Command::Authenticate {
+    //                     access_token: res.access_token,
+    //                 }),
+    //             )
+    //             .await?;
+    //             loop {
+    //                 match self.recv::<Authenticate>().await? {
+    //                     OutPayload::Error(e) => return Err(Error::Discord(e)),
+    //                     OutPayload::Ready(_) => return Err(Error::UnexpectedEvent),
+    //                     OutPayload::Event(e) => self.event_queue.push_back(e),
+    //                     OutPayload::CommandResponse(_) => break,
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
+}
+
+pub(crate) enum SecretType {
+    Local(String),
+    Remote(String),
+}
+
+/// Struct to save refresh tokens locally between executions
+#[async_trait::async_trait]
+pub trait TokenSaver {
+    /// Save token to external location
+    async fn save(&self, token: &str) -> io::Result<()>;
+    /// Load token from external location
+    async fn load(&self) -> io::Result<Option<String>>;
+}
+
+/// TokenSaver that uses a local file to save the token
+pub struct FileSaver {
+    /// Path to save the token to
+    pub path: PathBuf,
+}
+
+#[async_trait::async_trait]
+impl TokenSaver for FileSaver {
+    async fn save(&self, token: &str) -> io::Result<()> {
+        File::create(&self.path)
+            .await?
+            .write_all(token.as_bytes())
+            .await
+    }
+
+    async fn load(&self) -> io::Result<Option<String>> {
+        match File::open(&self.path).await {
+            Ok(mut f) => {
+                let mut s = String::new();
+                f.read_to_string(&mut s).await?;
+                Ok(Some(s))
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// TokenSaver that doesn't save
+pub struct NoneSaver;
+
+#[async_trait::async_trait]
+impl TokenSaver for NoneSaver {
+    async fn save(&self, _: &str) -> io::Result<()> {
+        Ok(())
+    }
+
+    async fn load(&self) -> io::Result<Option<String>> {
+        Ok(None)
+    }
 }
